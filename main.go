@@ -4,20 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
 
+	"github.com/go-git/go-git/v5"
 	"github.com/google/go-github/github"
 )
 
 func main() {
-	wd, err := os.Getwd()
-	log.Println(wd)
+	ex, err := os.Executable()
 	if err != nil {
 		panic(err)
 	}
+	wd := filepath.Dir(ex)
 	user := flag.String("username", "eyedeekay", "username to generate pages for")
 	flag.Parse()
 	if _, err := os.Stat("config.json"); err != nil {
@@ -38,6 +40,37 @@ func main() {
 		json.Unmarshal(bytes, &reposList)
 		for index, remote := range reposList {
 			log.Println("git clone", remote, filepath.Join(wd, index))
+			if _, err := os.Stat(filepath.Join(wd, index)); os.IsNotExist(err) {
+				_, err := git.PlainClone(filepath.Join(wd, index), false, &git.CloneOptions{
+					URL:      remote,
+					Progress: os.Stdout,
+				})
+				if err != nil {
+					panic(err)
+				}
+			} else {
+				r, err := git.PlainOpen(filepath.Join(wd, index))
+				if err != nil {
+					panic(err)
+				}
+				w, err := r.Worktree()
+				if err != nil {
+					panic(err)
+				}
+				err = w.Pull(&git.PullOptions{RemoteName: "origin"})
+				if err != nil {
+					panic(err)
+				}
+				ref, err := r.Head()
+				if err != nil {
+					panic(err)
+				}
+				commit, err := r.CommitObject(ref.Hash())
+				if err != nil {
+					panic(err)
+				}
+				fmt.Println(commit)
+			}
 		}
 	}
 }
@@ -63,11 +96,17 @@ func generate(gh_user string) map[string]string {
 		if err != nil {
 			panic(err)
 		}
+		if len(repos) == 0 {
+			break
+		}
 		for _, repo := range repos {
 			if repo.GetParent() == nil {
 				if !*repo.Fork {
-					if *repo.Name != gh_user+".github.io" {
-						jsonStruct[*repo.Name] = repo.GetSSHURL()
+					if *repo.HasPages {
+						log.Printf("repo %s has pages: %v", *repo.URL, *repo.HasPages)
+						if *repo.Name != gh_user+".github.io" {
+							jsonStruct[*repo.Name] = repo.GetGitURL()
+						}
 					}
 				}
 			}
