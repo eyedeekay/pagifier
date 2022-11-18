@@ -1,0 +1,8 @@
+{
+    "RunDir": "~/.i2p/eepsite/docroot/",
+    "Commands": [{
+        "Command": "./pagifier",
+        "Args": []
+    }],
+    "IntervalMinutes": 15
+}
