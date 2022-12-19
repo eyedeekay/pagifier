@@ -9,6 +9,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/google/go-github/github"
@@ -17,7 +19,7 @@ import (
 func main() {
 	ex, err := os.Executable()
 	if err != nil {
-		panic(err)
+		log.Printf("Path error: %s", err)
 	}
 	wd := filepath.Dir(ex)
 	user := flag.String("username", "eyedeekay", "username to generate pages for")
@@ -26,19 +28,20 @@ func main() {
 		jsonStruct := generate(*user)
 		bytes, err := json.MarshalIndent(jsonStruct, "", "  ")
 		if err != nil {
-			panic(err)
+			log.Printf("Marshal error: %s", err)
 		}
 		if err := ioutil.WriteFile("config.json", bytes, 0644); err != nil {
-			panic(err)
+			log.Printf("Write error: %s", err)
 		}
 	}
 
 	if bytes, err := ioutil.ReadFile("config.json"); err != nil {
-		panic(err)
+		log.Printf("Read error: %s", err)
 	} else {
 		reposList := make(map[string]string)
 		json.Unmarshal(bytes, &reposList)
 		for index, remote := range reposList {
+			time.Sleep(time.Second)
 			log.Println("git clone", remote, filepath.Join(wd, index))
 			if _, err := os.Stat(filepath.Join(wd, index)); os.IsNotExist(err) {
 				_, err := git.PlainClone(filepath.Join(wd, index), false, &git.CloneOptions{
@@ -46,28 +49,34 @@ func main() {
 					Progress: os.Stdout,
 				})
 				if err != nil {
-					panic(err)
+					log.Printf("Clone error: %s", err)
+					continue
 				}
 			} else {
 				r, err := git.PlainOpen(filepath.Join(wd, index))
 				if err != nil {
-					panic(err)
+					log.Printf("Open error: %s", err)
+					continue
 				}
 				w, err := r.Worktree()
 				if err != nil {
-					panic(err)
+					log.Printf("Tree error: %s", err)
+					continue
 				}
 				err = w.Pull(&git.PullOptions{RemoteName: "origin"})
 				if err != nil {
-					panic(err)
+					log.Printf("Pull error: %s", err)
+					continue
 				}
 				ref, err := r.Head()
 				if err != nil {
-					panic(err)
+					log.Printf("Head error: %s", err)
+					continue
 				}
 				commit, err := r.CommitObject(ref.Hash())
 				if err != nil {
-					panic(err)
+					log.Printf("Log error: %s", err)
+					continue
 				}
 				fmt.Println(commit)
 			}
@@ -94,7 +103,8 @@ func generate(gh_user string) map[string]string {
 		}
 		repos, _, err := client.Repositories.List(context.Background(), gh_user, opt)
 		if err != nil {
-			panic(err)
+			log.Printf(" error: %s", err)
+			continue
 		}
 		if len(repos) == 0 {
 			break
@@ -105,7 +115,7 @@ func generate(gh_user string) map[string]string {
 					if *repo.HasPages {
 						log.Printf("repo %s has pages: %v", *repo.URL, *repo.HasPages)
 						if *repo.Name != gh_user+".github.io" {
-							jsonStruct[*repo.Name] = repo.GetGitURL()
+							jsonStruct[*repo.Name] = strings.Replace(repo.GetGitURL(), "git://", "https://", 1)
 						}
 					}
 				}
